@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+    <!-- Primary SEO -->
+    <title>BeatWave PC — Bit-Perfect WASAPI Audio Playback</title>
+    <meta name="description" content="BeatWave PC delivers bit-perfect WASAPI Exclusive Mode audio playback, lossless cloud sync with your Android device, and local sandbox caching. Join the early access waitlist." />
+    <meta name="keywords" content="BeatWave PC, WASAPI, lossless audio, bit-perfect playback, desktop music player, BeatLabs" />
+    <meta name="author" content="BeatLabs" />
+    <meta name="theme-color" content="#6366f1" />
+
+    <!-- Open Graph / Facebook / Discord -->
+    <meta property="og:type" content="website" />
+    <meta property="og:url" content="https://beatwavepc.vercel.app/" />
+    <meta property="og:title" content="BeatWave PC — Bit-Perfect WASAPI Audio Playback" />
+    <meta property="og:description" content="Experience pure, bit-perfect lossless audio on your desktop. Join the early access waitlist for BeatWave PC by BeatLabs." />
+    <meta property="og:image" content="https://beatwavepc.vercel.app/og-image.png" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:site_name" content="BeatWave PC" />
+
+    <!-- Twitter Card -->
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:site" content="@_beat_labs" />
+    <meta name="twitter:title" content="BeatWave PC — Bit-Perfect WASAPI Audio Playback" />
+    <meta name="twitter:description" content="Experience pure, bit-perfect lossless audio on your desktop. Join the early access waitlist." />
+    <meta name="twitter:image" content="https://beatwavepc.vercel.app/og-image.png" />
+
+    <!-- PWA -->
+    <link rel="manifest" href="/manifest.json" />
+    <link rel="apple-touch-icon" href="/image.png" />
+
+    <!-- Favicon -->
+    <link rel="icon" type="image/x-icon" href="/icon.ico" />
+
+    <!-- Fonts -->
+    <link href="https://api.fontshare.com/v2/css?f[]=clash-display@400,500,600,700&display=swap" rel="stylesheet" />
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+    <!-- PWA Service Worker -->
+    <script>
+      if ('serviceWorker' in navigator) {
+        window.addEventListener('load', () => {
+          navigator.serviceWorker.register('/sw.js').catch(() => {});
+        });
+      }
+    </script>
+  </body>
+</html>
