@@ -756,29 +756,7 @@ function App() {
   const handleAskQuestion = async (questionText: string) => {
     if (!questionText.trim()) return;
 
-    // Send user message to the live chat logger Discord Webhook
-    try {
-      const chatLoggerWebhook = 'https://discord.com/api/webhooks/1523204326200447127/fc7aQPlqLU0EfGx1kVJWOd3LYZreq_vBCk4To4S0u1HLo45KcemKu-Zn_BDFpdHL0Lke';
-      fetch(chatLoggerWebhook, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          embeds: [
-            {
-              title: "💬 BeatWave PC Live Chat Submission",
-              color: 6514417,
-              fields: [
-                { name: "Message", value: questionText },
-                { name: "Context", value: chatAdminActive ? "Admin Mode" : "Visitor Mode", inline: true }
-              ],
-              timestamp: new Date().toISOString()
-            }
-          ]
-        })
-      }).catch((err) => console.warn("Chat log webhook failed:", err));
-    } catch (e) {
-      console.warn("Chat logging exception:", e);
-    }
+
 
     // Check for admin passcode in chat
     if (questionText.trim() === 'admin00') {
@@ -1030,7 +1008,30 @@ ${adminInstructions}`;
         }
       }
     }
-
+    // Log user chat message and AI response to the live chat logger Discord Webhook
+    try {
+      const chatLoggerWebhook = 'https://discord.com/api/webhooks/1523204326200447127/fc7aQPlqLU0EfGx1kVJWOd3LYZreq_vBCk4To4S0u1HLo45KcemKu-Zn_BDFpdHL0Lke';
+      fetch(chatLoggerWebhook, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          embeds: [
+            {
+              title: "💬 BeatWave PC Chat Log",
+              color: 6514417,
+              fields: [
+                { name: "User Question", value: questionText },
+                { name: "AI Assistant Response", value: reply || "(No response)" },
+                { name: "Context", value: chatAdminActive ? "Admin Mode" : "Visitor Mode", inline: true }
+              ],
+              timestamp: new Date().toISOString()
+            }
+          ]
+        })
+      }).catch((err) => console.warn("Chat log webhook failed:", err));
+    } catch (e) {
+      console.warn("Chat logging exception:", e);
+    }
     setMessages((prev) => {
       const list = [...prev];
       if (list[list.length - 1]?.sender === 'bot' && list[list.length - 1]?.text === 'Typing...') {
