@@ -199,6 +199,8 @@ function App() {
   const [broadcasting, setBroadcasting] = useState(false);
   const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
   const [showInstallBanner, setShowInstallBanner] = useState(false);
+  const [loadingScreen, setLoadingScreen] = useState(true);
+  const [loadingFade, setLoadingFade] = useState(false);
 
   // Admin Config edit states
   const [editAnnouncement, setEditAnnouncement] = useState('');
@@ -293,6 +295,16 @@ function App() {
       }
     });
     return () => unsubscribe();
+  }, []);
+
+  // Loading screen fade-out timers
+  useEffect(() => {
+    const timer1 = setTimeout(() => setLoadingFade(true), 1800);
+    const timer2 = setTimeout(() => setLoadingScreen(false), 2200);
+    return () => {
+      clearTimeout(timer1);
+      clearTimeout(timer2);
+    };
   }, []);
 
   // Subscribe to Firebase database connection status
@@ -743,6 +755,30 @@ function App() {
   // AI assistant dialogue question matcher
   const handleAskQuestion = async (questionText: string) => {
     if (!questionText.trim()) return;
+
+    // Send user message to the live chat logger Discord Webhook
+    try {
+      const chatLoggerWebhook = 'https://discord.com/api/webhooks/1523204326200447127/fc7aQPlqLU0EfGx1kVJWOd3LYZreq_vBCk4To4S0u1HLo45KcemKu-Zn_BDFpdHL0Lke';
+      fetch(chatLoggerWebhook, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          embeds: [
+            {
+              title: "💬 BeatWave PC Live Chat Submission",
+              color: 6514417,
+              fields: [
+                { name: "Message", value: questionText },
+                { name: "Context", value: chatAdminActive ? "Admin Mode" : "Visitor Mode", inline: true }
+              ],
+              timestamp: new Date().toISOString()
+            }
+          ]
+        })
+      }).catch((err) => console.warn("Chat log webhook failed:", err));
+    } catch (e) {
+      console.warn("Chat logging exception:", e);
+    }
 
     // Check for admin passcode in chat
     if (questionText.trim() === 'admin00') {
@@ -2270,6 +2306,51 @@ ${adminInstructions}`;
             >
               Maybe Later
             </button>
+          </div>
+        </div>
+      )}
+      {/* IMMERSIVE LOADING SCREEN */}
+      {loadingScreen && (
+        <div 
+          className={`fixed inset-0 z-[100] flex flex-col items-center justify-center bg-[#050508] transition-opacity duration-500 ${
+            loadingFade ? 'opacity-0 pointer-events-none' : 'opacity-100'
+          }`}
+        >
+          {/* Custom style for progress animation */}
+          <style>{`
+            @keyframes loadingProgress {
+              0% { width: 0%; }
+              100% { width: 100%; }
+            }
+          `}</style>
+          
+          {/* Neon gradient background glow */}
+          <div className="absolute w-[400px] h-[400px] rounded-full bg-[#6366f1]/10 blur-[80px] animate-pulse" />
+          
+          <div className="relative z-10 flex flex-col items-center gap-6">
+            {/* Logo image with scale pulse animation */}
+            <div className="w-16 h-16 rounded-2xl bg-white/5 border border-white/10 flex items-center justify-center p-2.5 shadow-2xl animate-bounce" style={{ animationDuration: '2s' }}>
+              <img src="/image.png" alt="BeatWave Logo" className="w-full h-full object-contain rounded" />
+            </div>
+            
+            <div className="flex flex-col items-center gap-2">
+              <span className="font-display text-2xl font-bold uppercase tracking-widest text-white">
+                BeatWave
+                <span className="text-transparent bg-clip-text" style={{ backgroundImage: THEMES[settings.themeColor || 'indigo'].gradient }}> PC</span>
+              </span>
+              <span className="text-[9px] uppercase tracking-widest text-white/35 font-bold">Bit-Perfect Audio</span>
+            </div>
+
+            {/* Glowing progress line */}
+            <div className="w-32 h-1 rounded-full bg-white/5 overflow-hidden border border-white/5 mt-2">
+              <div 
+                className="h-full rounded-full"
+                style={{ 
+                  animation: 'loadingProgress 1.8s ease-in-out forwards',
+                  backgroundImage: THEMES[settings.themeColor || 'indigo'].gradient
+                }}
+              />
+            </div>
           </div>
         </div>
       )}
