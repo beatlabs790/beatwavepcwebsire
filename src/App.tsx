@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { Sparkles, Check, ShieldCheck, RefreshCw, Layers, X, Smartphone, MessageSquare, Send, Settings, Lock, Zap, Music, HardDrive, ChevronDown } from 'lucide-react';
+import { Sparkles, Check, ShieldCheck, RefreshCw, Layers, X, Smartphone, MessageSquare, Send, Settings, Lock, Zap, Music, HardDrive, ChevronDown, Trash2 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { Button } from './components/ui/button';
 import {
@@ -9,8 +9,15 @@ import {
   updateSystemSettings,
   fetchApplicationsList,
   subscribeToConnectionStatus,
+  deleteApplication,
+  approveApplication,
+  incrementTotalVisits,
+  subscribeToTotalVisits,
+  saveBroadcast,
+  subscribeToBroadcasts,
+  setupPresence,
 } from './lib/firebase';
-import type { ApplicationDetails, SystemSettings } from './lib/firebase';
+import type { ApplicationDetails, SystemSettings, BroadcastLog } from './lib/firebase';
 
 const VIDEO_URL =
   'https://d8j0ntlcm91z4.cloudfront.net/user_38xzZboKViGWJOttwIXH07lWA1P/hf_20260328_065045_c44942da-53c6-4804-b734-f9e07fc22e08.mp4';
@@ -201,6 +208,9 @@ function App() {
   const [showInstallBanner, setShowInstallBanner] = useState(false);
   const [loadingScreen, setLoadingScreen] = useState(true);
   const [loadingFade, setLoadingFade] = useState(false);
+  const [activeUsers, setActiveUsers] = useState(1);
+  const [totalVisits, setTotalVisits] = useState(0);
+  const [broadcastsList, setBroadcastsList] = useState<(BroadcastLog & { id: string })[]>([]);
 
   // Admin Config edit states
   const [editAnnouncement, setEditAnnouncement] = useState('');
@@ -315,6 +325,27 @@ function App() {
     return () => unsubscribe();
   }, []);
 
+  // Increment total visits count on mount
+  useEffect(() => {
+    incrementTotalVisits();
+  }, []);
+
+  // Subscribe to unique visits tracker
+  useEffect(() => {
+    const unsubscribe = subscribeToTotalVisits((count) => {
+      setTotalVisits(count);
+    });
+    return () => unsubscribe();
+  }, []);
+
+  // Subscribe to concurrent live visitors presence
+  useEffect(() => {
+    const unsubscribe = setupPresence((count) => {
+      setActiveUsers(count);
+    });
+    return () => unsubscribe();
+  }, []);
+
   // Listen for custom PWA installation prompt
   useEffect(() => {
     const handleBeforeInstallPrompt = (e: Event) => {
@@ -379,6 +410,15 @@ function App() {
       });
 
       if (!res.ok) throw new Error('Broadcast failed');
+
+      // Save log to Firebase RTDB
+      await saveBroadcast({
+        message: discordMsg.trim(),
+        timestamp: new Date().toISOString(),
+        theme: settings.themeColor || 'indigo',
+        sender: 'System Administrator'
+      });
+
       addToast('📢 Broadcast sent to Discord successfully!', 'success');
       setDiscordMsg('');
     } catch (err) {
@@ -388,11 +428,42 @@ function App() {
     }
   };
 
+  // Toggle applicant wave approval status
+  const handleToggleApprove = async (id: string, approved: boolean) => {
+    try {
+      await approveApplication(id, approved);
+      addToast(approved ? 'Applicant approved!' : 'Approval revoked.', 'success');
+    } catch (err) {
+      addToast('Failed to update approval.', 'error');
+    }
+  };
+
+  // Delete waitlist applicant from database
+  const handleDeleteApplication = async (id: string) => {
+    if (!confirm('Are you sure you want to delete this waitlist entry?')) return;
+    try {
+      await deleteApplication(id);
+      addToast('Application deleted successfully.', 'success');
+    } catch (err) {
+      addToast('Failed to delete application.', 'error');
+    }
+  };
+
   // Subscribe to waitlist applications if Admin mode is logged in
   useEffect(() => {
     if (adminActive) {
       const unsubscribe = fetchApplicationsList((list) => {
         setApplicationsList(list);
+      });
+      return () => unsubscribe();
+    }
+  }, [adminActive]);
+
+  // Subscribe to broadcasts history when logged in as admin
+  useEffect(() => {
+    if (adminActive) {
+      const unsubscribe = subscribeToBroadcasts((list) => {
+        setBroadcastsList(list);
       });
       return () => unsubscribe();
     }
@@ -998,6 +1069,13 @@ ${adminInstructions}`;
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(payload)
+              });
+              // Save to Firebase broadcasts log
+              await saveBroadcast({
+                message: messageVal,
+                timestamp: new Date().toISOString(),
+                theme: settings.themeColor || 'indigo',
+                sender: 'AI Chat Administrator'
               });
               addToast('📢 AI Broadcast sent to Discord!', 'success');
             } catch (err) {
@@ -1936,151 +2014,247 @@ ${adminInstructions}`;
               </button>
             </div>
 
+            {/* Stats Summary Grid */}
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3 bg-white/[0.01] p-3 rounded-2xl border border-white/5">
+              <div className="p-3 bg-white/3 rounded-xl border border-white/5 text-left">
+                <span className="text-[8px] uppercase tracking-widest text-white/35 block font-bold">Total Signups</span>
+                <span className="text-lg font-bold text-white">{applicationsList.length}</span>
+              </div>
+              <div className="p-3 bg-white/3 rounded-xl border border-white/5 text-left">
+                <span className="text-[8px] uppercase tracking-widest text-white/35 block font-bold flex items-center gap-1.5">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                  Live Visitors
+                </span>
+                <span className="text-lg font-bold text-white">{activeUsers}</span>
+              </div>
+              <div className="p-3 bg-white/3 rounded-xl border border-white/5 text-left">
+                <span className="text-[8px] uppercase tracking-widest text-white/35 block font-bold">Total Visits</span>
+                <span className="text-lg font-bold text-white">{totalVisits}</span>
+              </div>
+              <div className="p-3 bg-white/3 rounded-xl border border-white/5 text-left">
+                <span className="text-[8px] uppercase tracking-widest text-white/35 block font-bold flex items-center gap-1.5">
+                  <span className={`w-1.5 h-1.5 rounded-full ${dbConnected ? 'bg-emerald-500' : 'bg-red-500 animate-pulse'}`} />
+                  Sync Database
+                </span>
+                <span className="text-[10px] font-bold mt-1.5 block text-white/70">{dbConnected ? 'Connected' : 'Offline'}</span>
+              </div>
+            </div>
+
             {/* Options grid */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               
-              {/* Settings Configuration form */}
-              <form onSubmit={handleAdminSettingsSubmit} className="flex flex-col gap-4 bg-white/[0.02] p-4 rounded-2xl border border-white/5">
-                <span className="text-[10px] font-bold text-white uppercase tracking-wider border-b border-white/5 pb-2">Global System Config</span>
+              {/* Left Column: Config + Analytics Chart */}
+              <div className="flex flex-col gap-6">
+                {/* Settings Configuration form */}
+                <form onSubmit={handleAdminSettingsSubmit} className="flex flex-col gap-4 bg-white/[0.02] p-4 rounded-2xl border border-white/5">
+                  <span className="text-[10px] font-bold text-white uppercase tracking-wider border-b border-white/5 pb-2 text-left">Global System Config</span>
 
-                {/* Maintenance mode toggle */}
-                <div className="flex justify-between items-center py-2 border border-white/5 rounded-xl px-3">
-                  <div className="flex flex-col">
-                    <span className="text-xs font-semibold text-white">Maintenance Mode</span>
-                    <span className="text-[9px] text-white/40">Block all visitor traffic</span>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={handleAdminToggleMaintenance}
-                    disabled={maintenanceToggling}
-                    className={`relative px-4 py-2 rounded-full text-[10px] font-bold uppercase tracking-wider transition-all flex items-center gap-2 ${
-                      settings.maintenanceMode
-                        ? 'bg-red-500/20 text-red-400 border border-red-500/40 shadow-[0_0_12px_rgba(239,68,68,0.2)]'
-                        : 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'
-                    } ${maintenanceToggling ? 'opacity-60 cursor-not-allowed' : 'hover:scale-105 cursor-pointer'}`}
-                  >
-                    <span className={`w-1.5 h-1.5 rounded-full ${settings.maintenanceMode ? 'bg-red-400 animate-pulse' : 'bg-emerald-400'}`} />
-                    {maintenanceToggling ? 'Saving...' : settings.maintenanceMode ? 'LIVE — Click to Disable' : 'OFF — Click to Enable'}
-                  </button>
-                </div>
-
-                {/* Maintenance Custom Message */}
-                <div className="flex flex-col gap-1.5">
-                  <label className="text-[9px] uppercase font-bold tracking-wider text-white/45">Maintenance Screen Message</label>
-                  <textarea
-                    value={editMaintenanceMessage}
-                    onFocus={() => { adminEditingRef.current = true; }}
-                    onChange={(e) => setEditMaintenanceMessage(e.target.value)}
-                    placeholder="e.g. We're improving BeatWave PC. Back soon!"
-                    rows={2}
-                    className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-2.5 text-xs text-white focus:outline-none focus:border-[#6366f1]/40 resize-none"
-                  />
-                </div>
-
-                {/* Announcement Message */}
-                <div className="flex flex-col gap-1.5">
-                  <label className="text-[9px] uppercase font-bold tracking-wider text-white/45">Banner Announcement Text</label>
-                  <input
-                    type="text"
-                    value={editAnnouncement}
-                    onFocus={() => { adminEditingRef.current = true; }}
-                    onChange={(e) => setEditAnnouncement(e.target.value)}
-                    placeholder="e.g. Schedule maintenance at 10 PM..."
-                    className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-2.5 text-xs text-white focus:outline-none focus:border-[#6366f1]/40"
-                  />
-                </div>
-
-                {/* Countdown Target Picker */}
-                <div className="flex flex-col gap-1.5">
-                  <label className="text-[9px] uppercase font-bold tracking-wider text-white/45">Countdown Timer Target Date</label>
-                  <div className="flex gap-2">
-                    <input 
-                      type="datetime-local" 
-                      value={editTimerTarget.substring(0, 16)}
-                      onChange={(e) => setEditTimerTarget(e.target.value)}
-                      className="flex-1 bg-white/5 border border-white/10 rounded-xl px-4 py-2.5 text-xs text-white focus:outline-none focus:border-[#6366f1]/40"
-                    />
+                  {/* Maintenance mode toggle */}
+                  <div className="flex justify-between items-center py-2 border border-white/5 rounded-xl px-3">
+                    <div className="flex flex-col text-left">
+                      <span className="text-xs font-semibold text-white">Maintenance Mode</span>
+                      <span className="text-[9px] text-white/40">Block all visitor traffic</span>
+                    </div>
                     <button
                       type="button"
-                      onClick={() => setEditTimerActive(!editTimerActive)}
-                      className={`px-3 rounded-xl text-[10px] font-bold uppercase tracking-wider transition-colors border ${
-                        editTimerActive 
-                          ? 'bg-[#6366f1]/20 text-[#6366f1] border-[#6366f1]/30' 
-                          : 'bg-white/5 text-white/40 border-white/5'
-                      }`}
+                      onClick={handleAdminToggleMaintenance}
+                      disabled={maintenanceToggling}
+                      className={`relative px-4 py-2 rounded-full text-[10px] font-bold uppercase tracking-wider transition-all flex items-center gap-2 ${
+                        settings.maintenanceMode
+                          ? 'bg-red-500/20 text-red-400 border border-red-500/40 shadow-[0_0_12px_rgba(239,68,68,0.2)]'
+                          : 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'
+                      } ${maintenanceToggling ? 'opacity-60 cursor-not-allowed' : 'hover:scale-105 cursor-pointer'}`}
                     >
-                      {editTimerActive ? 'Active' : 'Stopped'}
+                      <span className={`w-1.5 h-1.5 rounded-full ${settings.maintenanceMode ? 'bg-red-400 animate-pulse' : 'bg-emerald-400'}`} />
+                      {maintenanceToggling ? 'Saving...' : settings.maintenanceMode ? 'LIVE — Click to Disable' : 'OFF — Click to Enable'}
                     </button>
                   </div>
-                </div>
 
-                {/* Countdown Label Picker */}
-                <div className="flex flex-col gap-1.5">
-                  <label className="text-[9px] uppercase font-bold tracking-wider text-white/45">Countdown Timer Label</label>
-                  <input
-                    type="text"
-                    value={editCountdownLabel}
-                    onFocus={() => { adminEditingRef.current = true; }}
-                    onChange={(e) => setEditCountdownLabel(e.target.value)}
-                    placeholder="e.g. Beta drops in..."
-                    className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-2.5 text-xs text-white focus:outline-none focus:border-[#6366f1]/40"
-                  />
-                </div>
+                  {/* Maintenance Custom Message */}
+                  <div className="flex flex-col gap-1.5 text-left">
+                    <label className="text-[9px] uppercase font-bold tracking-wider text-white/45">Maintenance Screen Message</label>
+                    <textarea
+                      value={editMaintenanceMessage}
+                      onFocus={() => { adminEditingRef.current = true; }}
+                      onChange={(e) => setEditMaintenanceMessage(e.target.value)}
+                      placeholder="Maintenance mode is active. Please check back shortly!"
+                      rows={2}
+                      className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-2 text-xs text-white focus:outline-none focus:border-[#6366f1]/40 resize-none"
+                    />
+                  </div>
 
-                {/* Theme Color Selector */}
-                <div className="flex flex-col gap-1.5">
-                  <label className="text-[9px] uppercase font-bold tracking-wider text-white/45">Website Highlight Color Theme</label>
-                  <div className="grid grid-cols-4 gap-2">
-                    {(['indigo', 'amber', 'emerald', 'rose'] as const).map((color) => (
+                  {/* Announcement Banner */}
+                  <div className="flex flex-col gap-1.5 text-left">
+                    <label className="text-[9px] uppercase font-bold tracking-wider text-white/45">Sticky Announcement Banner Text</label>
+                    <input
+                      type="text"
+                      value={editAnnouncement}
+                      onFocus={() => { adminEditingRef.current = true; }}
+                      onChange={(e) => setEditAnnouncement(e.target.value)}
+                      placeholder="e.g. Beta Wave 1 is now launching!"
+                      className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-2.5 text-xs text-white focus:outline-none focus:border-[#6366f1]/40"
+                    />
+                  </div>
+
+                  {/* Timer Target Date */}
+                  <div className="flex flex-col gap-1.5 text-left">
+                    <label className="text-[9px] uppercase font-bold tracking-wider text-white/45">Release Countdown Target Date (ISO 8601)</label>
+                    <div className="flex gap-2">
+                      <input
+                        type="text"
+                        value={editTimerTarget}
+                        onFocus={() => { adminEditingRef.current = true; }}
+                        onChange={(e) => setEditTimerTarget(e.target.value)}
+                        placeholder="YYYY-MM-DDTHH:MM:SS"
+                        className="flex-1 bg-white/5 border border-white/10 rounded-xl px-4 py-2.5 text-xs text-white focus:outline-none focus:border-[#6366f1]/40"
+                      />
                       <button
-                        key={color}
                         type="button"
-                        onClick={() => setEditThemeColor(color)}
-                        className={`py-2 rounded-xl text-[10px] font-bold uppercase tracking-wider transition-colors border ${
-                          editThemeColor === color
-                            ? 'bg-white/15 text-white border-white/30 shadow-lg'
-                            : 'bg-white/5 text-white/50 border-transparent hover:bg-white/10'
+                        onClick={() => {
+                          setEditTimerActive(!editTimerActive);
+                          adminEditingRef.current = true;
+                        }}
+                        className={`px-3 rounded-xl border text-[9px] font-bold uppercase tracking-wider transition-colors cursor-pointer ${
+                          editTimerActive
+                            ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/25'
+                            : 'bg-white/5 text-white/40 border-white/10'
                         }`}
                       >
-                        <span className="flex items-center justify-center gap-1">
-                          <span 
-                            className="w-2 h-2 rounded-full shrink-0" 
-                            style={{ 
-                              backgroundColor: 
-                                color === 'indigo' ? '#6366f1' :
-                                color === 'amber' ? '#f59e0b' :
-                                color === 'emerald' ? '#10b981' : '#f43f5e'
-                            }} 
-                          />
-                          {color}
-                        </span>
+                        {editTimerActive ? 'Active' : 'Disabled'}
                       </button>
-                    ))}
+                    </div>
                   </div>
-                </div>
 
-                <button
-                  type="submit"
-                  disabled={adminSaving}
-                  className={`w-full py-3 rounded-xl text-xs font-bold text-white transition-all mt-2 flex items-center justify-center gap-2 ${
-                    adminSaved
-                      ? 'bg-emerald-600 shadow-[0_0_16px_rgba(16,185,129,0.3)]'
-                      : 'hover:brightness-110'
-                  } ${adminSaving ? 'opacity-70 cursor-not-allowed' : ''}`}
-                  style={{
-                    backgroundColor: adminSaved ? undefined : THEMES[settings.themeColor || 'indigo'].primary
-                  }}
-                >
-                  {adminSaving ? (
-                    <><span className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" /> Saving...</>
-                  ) : adminSaved ? (
-                    <><span>✓</span> Saved!</>
-                  ) : 'Save Configuration'}
-                </button>
-              </form>
+                  {/* Countdown Label Picker */}
+                  <div className="flex flex-col gap-1.5 text-left">
+                    <label className="text-[9px] uppercase font-bold tracking-wider text-white/45">Countdown Timer Label</label>
+                    <input
+                      type="text"
+                      value={editCountdownLabel}
+                      onFocus={() => { adminEditingRef.current = true; }}
+                      onChange={(e) => setEditCountdownLabel(e.target.value)}
+                      placeholder="e.g. Beta drops in..."
+                      className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-2.5 text-xs text-white focus:outline-none focus:border-[#6366f1]/40"
+                    />
+                  </div>
+
+                  {/* Theme Color Selector */}
+                  <div className="flex flex-col gap-1.5 text-left">
+                    <label className="text-[9px] uppercase font-bold tracking-wider text-white/45">Website Highlight Color Theme</label>
+                    <div className="grid grid-cols-4 gap-2">
+                      {(['indigo', 'amber', 'emerald', 'rose'] as const).map((color) => (
+                        <button
+                          key={color}
+                          type="button"
+                          onClick={() => setEditThemeColor(color)}
+                          className={`py-2 rounded-xl text-[10px] font-bold uppercase tracking-wider transition-colors border ${
+                            editThemeColor === color
+                              ? 'bg-white/15 text-white border-white/30 shadow-lg'
+                              : 'bg-white/5 text-white/50 border-transparent hover:bg-white/10'
+                          }`}
+                        >
+                          <span className="flex items-center justify-center gap-1">
+                            <span 
+                              className="w-2 h-2 rounded-full shrink-0" 
+                              style={{ 
+                                backgroundColor: 
+                                  color === 'indigo' ? '#6366f1' :
+                                  color === 'amber' ? '#f59e0b' :
+                                  color === 'emerald' ? '#10b981' : '#f43f5e'
+                              }} 
+                            />
+                            {color}
+                          </span>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  <button
+                    type="submit"
+                    disabled={adminSaving}
+                    className={`w-full py-3 rounded-xl text-xs font-bold text-white transition-all mt-2 flex items-center justify-center gap-2 ${
+                      adminSaved
+                        ? 'bg-emerald-600 shadow-[0_0_16px_rgba(16,185,129,0.3)]'
+                        : 'hover:brightness-110'
+                    } ${adminSaving ? 'opacity-70 cursor-not-allowed' : ''}`}
+                    style={{
+                      backgroundColor: adminSaved ? undefined : THEMES[settings.themeColor || 'indigo'].primary
+                    }}
+                  >
+                    {adminSaving ? (
+                      <><span className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" /> Saving...</>
+                    ) : adminSaved ? (
+                      <><span>✓</span> Saved!</>
+                    ) : 'Save Configuration'}
+                  </button>
+                </form>
+
+                {/* Waitlist Analytics Chart */}
+                {(() => {
+                  const chartData = [];
+                  const dateCounts: Record<string, number> = {};
+                  for (let i = 6; i >= 0; i--) {
+                    const d = new Date();
+                    d.setDate(d.getDate() - i);
+                    const dateString = d.toISOString().split('T')[0];
+                    dateCounts[dateString] = 0;
+                    chartData.push({
+                      dateString,
+                      label: d.toLocaleDateString(undefined, { weekday: 'short', day: 'numeric' }),
+                      count: 0
+                    });
+                  }
+                  applicationsList.forEach(app => {
+                    if (app.timestamp) {
+                      const ds = app.timestamp.split('T')[0];
+                      if (ds in dateCounts) {
+                        dateCounts[ds]++;
+                      }
+                    }
+                  });
+                  chartData.forEach(day => {
+                    day.count = dateCounts[day.dateString];
+                  });
+                  const maxCount = Math.max(...chartData.map(d => d.count), 1);
+
+                  return (
+                    <div className="flex flex-col bg-white/[0.02] p-4 rounded-2xl border border-white/5 gap-3 text-left">
+                      <span className="text-[10px] font-bold text-white uppercase tracking-wider border-b border-white/5 pb-2 block">
+                        Waitlist Signups (Last 7 Days)
+                      </span>
+                      
+                      <div className="relative h-28 w-full mt-1 flex items-end justify-between px-2 gap-2">
+                        {chartData.map((day, idx) => {
+                          const h = (day.count / maxCount) * 70;
+                          const barHeight = day.count > 0 ? Math.max(h, 4) : 0;
+                          return (
+                            <div key={idx} className="flex flex-col items-center flex-1 group relative">
+                              <div className="absolute bottom-full mb-1 opacity-0 group-hover:opacity-100 transition-opacity bg-black/80 text-[8px] text-white px-1.5 py-0.5 rounded font-bold pointer-events-none select-none z-10 whitespace-nowrap">
+                                {day.count} signups
+                              </div>
+                              <div 
+                                className="w-full rounded-t transition-all duration-500"
+                                style={{
+                                  height: `${barHeight}px`,
+                                  backgroundImage: THEMES[settings.themeColor || 'indigo'].gradient,
+                                  boxShadow: day.count > 0 ? `0 0 10px ${THEMES[settings.themeColor || 'indigo'].secondary}44` : undefined
+                                }}
+                              />
+                              <span className="text-[8px] text-white/35 mt-1.5 font-bold uppercase truncate max-w-full">
+                                {day.label}
+                              </span>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  );
+                })()}
+              </div>
 
               {/* Right column: Waitlist + Discord Console */}
-              <div className="flex flex-col gap-6 max-h-[500px]">
+              <div className="flex flex-col gap-6">
                 {/* Real-time Submissions table */}
                 <div className="flex flex-col bg-white/[0.02] p-4 rounded-2xl border border-white/5 overflow-hidden max-h-[220px]">
                   <div className="flex justify-between items-center border-b border-white/5 pb-2 mb-3">
@@ -2100,17 +2274,48 @@ ${adminInstructions}`;
                   
                   <div className="flex-1 overflow-y-auto flex flex-col gap-2 pr-1">
                     {applicationsList.map((app) => (
-                      <div key={app.id} className="p-3 bg-white/5 rounded-xl border border-white/5 flex flex-col gap-1">
+                      <div key={app.id} className="p-3 bg-white/5 rounded-xl border border-white/5 flex flex-col gap-1 relative group/item text-left">
                         <div className="flex justify-between items-center text-[10px]">
-                          <span className="font-bold text-white">{app.name}</span>
+                          <div className="flex items-center gap-1.5">
+                            <span className="font-bold text-white">{app.name}</span>
+                            {app.approved && (
+                              <span className="text-[7px] bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 px-1.5 py-0.5 rounded uppercase font-extrabold tracking-wider">
+                                Approved
+                              </span>
+                            )}
+                          </div>
                           <span className="text-white/40">{new Date(app.timestamp).toLocaleDateString()}</span>
                         </div>
-                        <span className="text-[9px] text-[#6366f1]">{app.email}</span>
+                        <span className="text-[9px]" style={{ color: THEMES[settings.themeColor || 'indigo'].primary }}>{app.email}</span>
                         <span className="text-[9px] text-white/45 font-mono">Instagram: {app.instagramId}</span>
                         {app.mobile && <span className="text-[9px] text-white/45 font-mono">Mobile: {app.mobile}</span>}
                         <p className="text-[10px] text-white/70 leading-normal border-t border-white/5 pt-1.5 mt-1 font-sans">
                           {app.reason}
                         </p>
+                        
+                        {/* Hover Action buttons */}
+                        <div className="flex gap-1.5 mt-2 border-t border-white/5 pt-2 justify-end opacity-60 group-hover/item:opacity-100 transition-opacity">
+                          <button
+                            type="button"
+                            onClick={() => handleToggleApprove(app.id, !app.approved)}
+                            className={`p-1 rounded border transition-colors flex items-center justify-center gap-1 text-[8px] font-bold uppercase tracking-wider px-2 cursor-pointer ${
+                              app.approved
+                                ? 'bg-amber-500/10 text-amber-400 border-amber-500/25 hover:bg-amber-500/20'
+                                : 'bg-emerald-500/10 text-emerald-400 border-emerald-500/25 hover:bg-emerald-500/20'
+                            }`}
+                          >
+                            <Check className="w-2.5 h-2.5" />
+                            <span>{app.approved ? 'Revoke' : 'Approve'}</span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteApplication(app.id)}
+                            className="p-1 rounded bg-red-500/10 text-red-400 border border-red-500/25 hover:bg-red-500/20 transition-colors flex items-center justify-center gap-1 text-[8px] font-bold uppercase tracking-wider px-2 cursor-pointer"
+                          >
+                            <Trash2 className="w-2.5 h-2.5" />
+                            <span>Delete</span>
+                          </button>
+                        </div>
                       </div>
                     ))}
                     {applicationsList.length === 0 && (
@@ -2121,18 +2326,19 @@ ${adminInstructions}`;
 
                 {/* Discord Broadcast Console */}
                 <div className="flex flex-col bg-white/[0.02] p-4 rounded-2xl border border-white/5 gap-3">
-                  <span className="text-[10px] font-bold text-white uppercase tracking-wider border-b border-white/5 pb-2 block">
+                  <span className="text-[10px] font-bold text-white uppercase tracking-wider border-b border-white/5 pb-2 block text-left">
                     Discord Broadcast Console
                   </span>
                   
-                  <div className="flex flex-col gap-1.5">
+                  <div className="flex flex-col gap-1.5 text-left">
                     <label className="text-[9px] uppercase font-bold tracking-wider text-white/45">Broadcast Message</label>
                     <textarea
                       value={discordMsg}
                       onChange={(e) => setDiscordMsg(e.target.value)}
                       placeholder="Type message to broadcast to Discord webhook..."
                       rows={2}
-                      className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-2 text-xs text-white focus:outline-none focus:border-[#6366f1]/40 resize-none"
+                      className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-2 text-xs text-white focus:outline-none focus:border-[#6366f1]/40 resize-none animate-pulse"
+                      style={{ animationDuration: '4s' }}
                     />
                   </div>
 
@@ -2147,6 +2353,30 @@ ${adminInstructions}`;
                   >
                     {broadcasting ? 'Broadcasting...' : '📢 Send Announcement'}
                   </button>
+                </div>
+
+                {/* Broadcasts History Log */}
+                <div className="flex flex-col bg-white/[0.02] p-4 rounded-2xl border border-white/5 overflow-hidden max-h-[160px] gap-2">
+                  <span className="text-[10px] font-bold text-white uppercase tracking-wider border-b border-white/5 pb-2 block text-left">
+                    Broadcasts History
+                  </span>
+                  
+                  <div className="flex-1 overflow-y-auto flex flex-col gap-2 pr-1">
+                    {broadcastsList.map((log) => (
+                      <div key={log.id} className="p-2.5 bg-white/3 rounded-lg border border-white/5 flex flex-col gap-1 text-left">
+                        <div className="flex justify-between items-center text-[8px] text-white/35">
+                          <span className="font-bold" style={{ color: THEMES[(log.theme as 'indigo' | 'amber' | 'emerald' | 'rose') || 'indigo'].secondary }}>{log.sender || 'System'}</span>
+                          <span>{new Date(log.timestamp).toLocaleDateString()} {new Date(log.timestamp).toLocaleTimeString(undefined, {hour: '2-digit', minute:'2-digit'})}</span>
+                        </div>
+                        <p className="text-[9.5px] text-white/80 leading-normal font-sans">
+                          {log.message}
+                        </p>
+                      </div>
+                    ))}
+                    {broadcastsList.length === 0 && (
+                      <span className="text-[9px] text-white/30 text-center py-4">No broadcast history.</span>
+                    )}
+                  </div>
                 </div>
               </div>
 

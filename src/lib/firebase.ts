@@ -23,6 +23,7 @@ export interface ApplicationDetails {
   mobile?: string;
   reason: string;
   timestamp: string;
+  approved?: boolean;
 }
 
 export interface SystemSettings {
@@ -133,5 +134,61 @@ export const subscribeToConnectionStatus = (callback: (connected: boolean) => vo
   const connectedRef = ref(db, ".info/connected");
   return onValue(connectedRef, (snap) => {
     callback(snap.val() === true);
+  });
+};
+
+// Approve or toggle wave selection for a waitlist applicant
+export const approveApplication = async (id: string, approved: boolean) => {
+  const appApprovedRef = ref(db, `applications/${id}/approved`);
+  return set(appApprovedRef, approved);
+};
+
+// Increment total unique visits count (once per session)
+export const incrementTotalVisits = async () => {
+  if (typeof window !== 'undefined' && !sessionStorage.getItem('beatwave_visited')) {
+    sessionStorage.setItem('beatwave_visited', 'true');
+    const visitsRef = ref(db, 'stats/totalVisits');
+    onValue(visitsRef, (snap) => {
+      const current = snap.val() || 0;
+      set(visitsRef, current + 1);
+    }, { onlyOnce: true });
+  }
+};
+
+// Subscribe to total unique visits count
+export const subscribeToTotalVisits = (callback: (visits: number) => void) => {
+  const visitsRef = ref(db, 'stats/totalVisits');
+  return onValue(visitsRef, (snap) => {
+    callback(snap.val() || 0);
+  });
+};
+
+// Save a broadcast announcement log to Firebase
+export interface BroadcastLog {
+  message: string;
+  timestamp: string;
+  theme?: string;
+  sender?: string;
+}
+
+export const saveBroadcast = async (log: BroadcastLog) => {
+  const broadcastsRef = ref(db, 'broadcasts');
+  return push(broadcastsRef, log);
+};
+
+// Subscribe to broadcasts history log list
+export const subscribeToBroadcasts = (callback: (list: (BroadcastLog & { id: string })[]) => void) => {
+  const broadcastsRef = ref(db, 'broadcasts');
+  return onValue(broadcastsRef, (snap) => {
+    if (snap.exists()) {
+      const data = snap.val();
+      const list = Object.entries(data).map(([id, val]) => ({
+        id,
+        ...(val as BroadcastLog)
+      })).sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+      callback(list);
+    } else {
+      callback([]);
+    }
   });
 };
